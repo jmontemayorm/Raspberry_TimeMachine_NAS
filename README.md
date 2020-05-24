@@ -84,6 +84,16 @@ For the moment, this guide does not take into account the setup of a RAID config
 4. In your Pi's shell, change the default password by running `sudo passwd`.
 5. Update your Pi by running `sudo apt-get update && sudo apt-get upgrade -y`.
 
+## Drive Setup
+1. Create a mounting point for your Time Machine (remember to be consistent upon the name you choose), set the permissions, and give yourself ownership by running `sudo mkdir -p /nas/tm && sudo chmod -R 700 /nas/tm && sudo chown pi:pi /nas/tm`. I chose to create a folder `nas` from where all the mounting points will branch, for the Time Machine partition, I decided to name the mounting point `tm`.
+2. Identify your drive's partition. Type `sudo /sbin/parted` and hit return. Type `print` and hit return again to list the drives and partitions. In my case, I want to use `sda4`, you can identify the letter where it says `Disk /dev/sda` and the number from the table listing the partitions. I previously made the partitions using Disk Utility in MacOS. Hit `ctrl + C` to exit.
+3. Format your drive by running `sudo mkfs.ext4 /dev/<your partition>`, in my case `sudo mkfs.ext4 /dev/sda4`.
+4. Identify the UUID of the partition by listing `ls -lha /dev/disk/by-uuid`.
+5. Edit fstab to mount the partition `sudo nano /etc/fstab` by appending `UUID=<your UUID> /nas/tm ext4 force,rw,user,noauto 0 0`.
+6. Test mounting the drive `sudo mount /nas/tm`.
+
+
+
 ## Sources
 https://gregology.net/2018/09/raspberry-pi-time-machine/
 
