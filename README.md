@@ -17,7 +17,7 @@ For the moment, this guide does not take into account the setup of a RAID config
 #### Software Used
 * [Raspbian Buster Lite](https://www.raspberrypi.org/downloads/raspbian/) (Released: 2020-02-13)
 * [Raspberry Pi Imager](https://www.raspberrypi.org/downloads/)
-* MacOS Catalina (10.15.4)
+* MacOS Catalina
 
 #### Hardware Used
 * Raspberry Pi 4 (2 GB RAM)
@@ -81,24 +81,90 @@ For the moment, this guide does not take into account the setup of a RAID config
     2. To prevent the IP from changing, you should setup a Static IP. I did it directly from my router's admin app, but there are other ways to achieve this.
     3. Now we're going to add a personalized hostname to access it in a more comfortable way (I did it directly from my Mac, but you can change this in the Pi's hosts, as it supports mDNS): In the Terminal type `sudo nano /etc/hosts`, hit return, type in your password when prompted and add the following line at the end, substituting the values `<raspberry's ip>  <desired hostname>` (you can also put a comment before to have a cleaner hosts file), save and close the file. Finally type `sudo killall -HUP mDNSResponder` into the Terminal to flush your Mac's DNS cache.
     4. If everything was done correctly and your Pi is on and connected to your network, you should now be able to connect via SSH. In a Terminal window type `ssh pi@<your Pi's hostname or IP address>` (for example, I chose raspberry.local hence `ssh pi@raspberry.local`) and hit return. Your Mac might ask you to validate the authenticity, type `yes` and hit return. You should now be prompted for your Pi's password, which by default is `raspberry`.
-4. In your Pi's shell, change the default password by running `sudo passwd`.
+4. In your Pi's shell, change the default password by running `passwd`.
 5. Update your Pi by running `sudo apt-get update && sudo apt-get upgrade -y`.
+
+## Drive Partitioning and Formatting _(Optional)_
+I decided to partition the drive from the Pi, but you could do it elsewhere. Just make sure to format the partitions as ext4 (other formats _might_ work, but this is the one I have used).
+
+1. Run `sudo fdisk -l` to list the connected drives. You should see your USB drives at the end, listed as `Disk /dev/sdX`, followed by it's physical size and other details, where `X` is the a lowercase letter (if you only have one drive connected, it should be `/dev/sda`).
+2. Run `sudo /sbin/parted /dev/sda`, changing `sda` if necessary. **WARNING:** The following process will delete any contents in the device.
+3. Type `mktable gpt`, hit return, and confirm the prompt to delete all data and create a new partition table.
+4. Make the partitions:
+    1. Type `mkpart NAME ext4 STARTING_SECTOR ENDING_SECTOR`, substituting `NAME` for the name you wish to give the partition, and `STARTING_SECTOR` and `ENDING_SECTOR` for the sizes you wish to give. I recommend the first partition's starting sector to be `4MiB`. To make it fill the disk, set the ending sector to `-1s`. I used the commands `mkpart TM ext4 4MiB 1000GiB` and `mkpart Store ext4 1000GiB -1s` to create my partitions. When using `-1s` as the ending sector you will be prompted with a message indicating that you requested _X_ sector range and that the closest manageable is _Y_, confirm to proceed.
+    2. Confirm the partition is aligned by typing `align`, hitting return, hitting return again (to choose optimal), and entering the partition number to check (starting at 1) and hitting return. If it's properly aligned, it should display the partition number followed by `aligned`.
+    3. You can confirm your partitions table by typing `print` and hitting return.
+5. To exit `parted` use the command `q`.
 
 ## Drive Setup
 1. Create a mounting point for your Time Machine (remember to be consistent upon the name you choose), set the permissions, and give yourself ownership by running `sudo mkdir -p /nas/tm && sudo chmod -R 700 /nas/tm && sudo chown pi:pi /nas/tm`. I chose to create a folder `nas` from where all the mounting points will branch, for the Time Machine partition, I decided to name the mounting point `tm`.
-2. Identify your drive's partition. Type `sudo /sbin/parted` and hit return. Type `print` and hit return again to list the drives and partitions. In my case, I want to use `sda4`, you can identify the letter where it says `Disk /dev/sda` and the number from the table listing the partitions. I previously made the partitions using Disk Utility in MacOS. Hit `ctrl + C` to exit.
-3. Format your drive by running `sudo mkfs.ext4 /dev/<your partition>`, in my case `sudo mkfs.ext4 /dev/sda4`.
-4. Identify the UUID of the partition by listing `ls -lha /dev/disk/by-uuid`.
-5. Edit fstab to mount the partition `sudo nano /etc/fstab` by appending `UUID=<your UUID> /nas/tm ext4 force,rw,user,noauto 0 0`.
-6. Test mounting the drive `sudo mount /nas/tm`.
+2. Identify your drive's partition. If you followed the partitioning section of this guide, it will be your `/dev/sdX`, followed by the partition number (e.g. `/dev/sda1`). Alternatively, run `sudo fdisk -l` and look your the device and partition.
+4. Identify the UUID of the partition by listing `ls -lha /dev/disk/by-uuid` and finding the line ending with `/dev/sdX#`, where `X` and `#` are the device's letter and partition's number, respectively.
+5. Edit fstab to mount the partition `sudo nano /etc/fstab` by appending `UUID=<your UUID> /nas/tm ext4 rw,user,auto 0 0` (be sure to change `/nas/tm` if you're using another mounting point).
+6. Test mounting the drive `sudo mount /nas/tm` (or changing `/nas/tm` for your respective mounting point). If no error shows, your drive should now be mounted.
+7. Repeat for your NAS, I named my mounting point `store` (`/nas/store`).
 
+## Time Machine Setup
+1. Run `sudo apt-get install netatalk -y` to install netatalk, the software we'll use to emulate a Time Capsule (AFP Server).
+2. Run `netatalk -V` to confirm it's properly installed. It should show your version and some other data. My displayed version is `3.1.12`.
+3. Edit `nsswitch.conf` by running `sudo nano /etc/nsswitch.conf` and append `mdns4 mdns` to the line starting with `hosts`. It should en up looking like this: `hosts:          files mdns4_minimal [NOTFOUND=return] dns mdns4 mdns`.
+4. Edit `afp.conf` by running `sudo nano /etc/netatalk/afp.conf` and append the following:
+    ```
+    [Global]
+      mimic model = TimeCapsule6,106
 
+    [Time Machine]
+      path = /nas/tm
+      time machine = yes
+    ```
+    Making sure to change `/nas/tm` if you chose a different mounting point.
+5. Start the two services by running `sudo service avahi-daemon start` and `sudo service netatalk start`.
+
+## Accessing the Time Machine
+1. While in Finder press `ctrl + K` to open the _Connect to Server_ window.
+2. Add an AFP server with your Pi's IP address, or the hostname you used, in my case `afp://raspberry.local`.
+3. Connect to the server and login with your Pi's username and password (we used the `pi` user in this guide).
+4. Open Time Machine Preferences and look for your new AFP server.
+
+## Store (NAS) Setup
+1. Instal Samba by running `sudo apt install samba samba-common-bin`. Confirm when promted to proceed and choose the default options when requested.
+2. Edit `smb.conf` by running `sudo nano /etc/samba/smb.conf`, go to the end of the file, and add the following:
+    ```
+    [Store]
+      path=/nas/store
+      writeable=Yes
+      create mask=0777
+      directory mask=0777
+      public=no
+    ```
+    Make sure to change `/nas/store` if you chose a different mounting point. The name inside the square brackets will be the name of the volume on your network.
+3. Restart Samba by running `sudo systemctl restart smbd`.
+4. Grant access to your user by running `sudo smbpasswd -a pi` and setting a password (you'll require this password to access the storage). There's the possibility to add users and restrict access, but it won't be covered in this guide for the moment.
+
+## Accesing the NAS
+1. While in Finder press `ctrl + K` to open the _Connect to Server_ window.
+2. Add a Samba server with your Pi's IP address, or the hostname you used, in my case `smb://raspberry.local`.
+3. Connect to the server and login with the username and password setup for Samba (the user might be the same but with a different password). Keep the login in the Keychain for easier access.
+4. Select the volume(s) to mount.
+
+## Boot Setup
+#### Pi
+To mount the volumes and start the services upon booting, we need to edit `crontab` by running `sudo crontab -e` (then selecting an editor, 1 for nano) and appending `@reboot sleep 30 && mount /media/tm && mount /media/nas && sleep 30 && service avahi-daemon start && service netatalk start`. The 30 seconds sleep is to give time to the drive(s) to spin up and become mounted before starting the services.
+#### MacOS
+Once the desired volumes are mounted, open `System Preferences` and go to `Users & Groups`, `Login Items`, and drag and drop the volumes to the list. When you login into your account, you Mac will now look for the volumes and attempt to mount them.
+
+## Troubleshooting
+If you encounter a problem where the connection is refused or you can't write to the disk, try running `sudo chmod -R 700 /nas/tm && sudo chown pi:pi /nas/tm` (or the respective mount point) again and retry.
 
 ## Sources
 https://gregology.net/2018/09/raspberry-pi-time-machine/
+
+https://magpi.raspberrypi.org/articles/build-a-raspberry-pi-nas
 
 https://www.raspberrypi.org/documentation/remote-access/ssh/README.md
 
 https://www.raspberrypi.org/documentation/configuration/wireless/headless.md
 
 https://www.imore.com/how-edit-your-macs-hosts-file-and-why-you-would-want#how-to-edit-the-hosts-file
+
+http://www.gnu.org/software/parted/manual/
