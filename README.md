@@ -14,6 +14,8 @@ At the moment this guide was created, I connected the Raspberry to my network vi
 
 For the moment, this guide does not take into account the setup of a RAID configuration, but might do so in the future.
 
+**Important note:** I do not recommend this setup for your regular backups (at least not with the Pi's WiFi).
+
 #### Software Used
 * [Raspbian Buster Lite](https://www.raspberrypi.org/downloads/raspbian/) (Released: 2020-02-13)
 * [Raspberry Pi Imager](https://www.raspberrypi.org/downloads/)
